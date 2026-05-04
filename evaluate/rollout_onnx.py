@@ -104,6 +104,17 @@ def build_ort_session(args: argparse.Namespace) -> ort.InferenceSession:
     return session
 
 
+def infer_onnx_context_frames(session: ort.InferenceSession, model: torch.nn.Module) -> int:
+    for session_input in session.get_inputs():
+        if session_input.name != "context":
+            continue
+        shape = session_input.shape
+        if len(shape) > 1 and isinstance(shape[1], int):
+            return int(shape[1])
+
+    return max(1, int(getattr(model.vit, "max_num_frames", 2)) - 1)
+
+
 def ensure_tokenizer_env(config_path: Path, exp_dir: Path) -> None:
     config_text = config_path.read_text(encoding="utf-8")
     if "$TK_WORK_DIR" not in config_text:
@@ -335,6 +346,9 @@ def generate_images(args: argparse.Namespace, unknown_args: List[str]) -> None:
     if args.evaluate_ema:
         logger.info("Using weights baked into the ONNX model; evaluate_ema does not switch weights at runtime.")
 
+    num_condition_frames = infer_onnx_context_frames(ort_session, model)
+    logger.info(f"Using {num_condition_frames} conditioning frame(s) based on the exported ONNX model input shape.")
+
     if args.val_config is not None:
         data_cfg = OmegaConf.merge(
             OmegaConf.load(args.val_config), OmegaConf.from_dotlist(unknown_args)
@@ -342,11 +356,11 @@ def generate_images(args: argparse.Namespace, unknown_args: List[str]) -> None:
     else:
         data_cfg = cfg
 
-    num_condition_frames = None
     if args.save_real:
-        num_condition_frames = data_cfg.data.params.validation.params.num_frames - 1
-        num_frames_total = num_condition_frames + args.num_gen_frames
-        data_cfg.data.params.validation.params.num_frames = num_frames_total
+        validation_params = data_cfg.data.params.validation.params
+        if hasattr(validation_params, "num_frames"):
+            num_frames_total = num_condition_frames + args.num_gen_frames
+            validation_params.num_frames = num_frames_total
 
     if hasattr(data_cfg.data.params, "train"):
         del data_cfg.data.params.train
@@ -373,6 +387,11 @@ def generate_images(args: argparse.Namespace, unknown_args: List[str]) -> None:
         else:
             x = batch.to(device, non_blocking=True)
             frame_rate = None
+
+        if x.shape[1] < num_condition_frames:
+            raise ValueError(
+                f"Validation sample provides {x.shape[1]} frames, but the ONNX model expects {num_condition_frames} conditioning frames."
+            )
 
         cond_x = x[:, :num_condition_frames]
 

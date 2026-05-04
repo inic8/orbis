@@ -108,6 +108,9 @@ class ExportVerificationWorkflow:
         onnx_path = self.vit_exporter.export(
             self._require_model(),
             self.config.artifacts.onnx_path,
+            batch_size=self.config.batch_size,
+            context_frames=self.config.context_frames,
+            target_frames=self.config.target_frames,
             opset=self.config.opset,
             do_constant_folding=self.config.do_constant_folding,
         )

@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/orbis-pruned-model-metadata.schema.json",
+  "title": "Orbis Pruned Model Metadata",
+  "type": "object",
+  "required": [
+    "schema_name",
+    "schema_version",
+    "source",
+    "checkpoint",
+    "model",
+    "structure",
+    "pruning"
+  ],
+  "properties": {
+    "schema_name": {
+      "const": "orbis_pruned_model_metadata"
+    },
+    "schema_version": {
+      "type": "string"
+    },
+    "source": {
+      "type": "object",
+      "required": ["checkpoint_path", "config_path", "checkpoint_size_bytes"],
+      "properties": {
+        "checkpoint_path": { "type": "string" },
+        "config_path": { "type": "string" },
+        "checkpoint_size_bytes": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "checkpoint": {
+      "type": "object",
+      "required": ["container_type", "top_level_keys", "has_state_dict_key", "has_pruning_stats_key", "tensor_count", "parameter_count"],
+      "properties": {
+        "container_type": { "type": "string" },
+        "top_level_keys": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "has_state_dict_key": { "type": "boolean" },
+        "has_pruning_stats_key": { "type": "boolean" },
+        "tensor_count": { "type": "integer", "minimum": 0 },
+        "parameter_count": { "type": "integer", "minimum": 0 },
+        "sample_tensor_shapes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "integer" }
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "model": {
+      "type": "object",
+      "required": ["target", "generator", "has_vit"],
+      "properties": {
+        "target": { "type": ["string", "null"] },
+        "generator": {
+          "type": "object",
+          "properties": {
+            "target": { "type": ["string", "null"] },
+            "hidden_size": { "type": ["integer", "null"] },
+            "input_size": {
+              "type": ["array", "null"],
+              "items": { "type": "integer" }
+            },
+            "in_channels": { "type": ["integer", "null"] },
+            "num_heads": { "type": ["integer", "null"] },
+            "depth": { "type": ["integer", "null"] },
+            "mlp_ratio": { "type": ["number", "null"] },
+            "max_num_frames": { "type": ["integer", "null"] }
+          },
+          "additionalProperties": true
+        },
+        "has_vit": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "structure": {
+      "type": "object",
+      "required": ["mlp_module_count", "mlp_modules"],
+      "properties": {
+        "mlp_module_count": { "type": "integer", "minimum": 0 },
+        "mlp_modules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "kind", "layer_group", "in_features", "hidden_features", "out_features", "effective_hidden_dim"],
+            "properties": {
+              "name": { "type": "string" },
+              "kind": { "type": "string" },
+              "layer_group": { "type": "string" },
+              "in_features": { "type": "integer", "minimum": 0 },
+              "hidden_features": { "type": "integer", "minimum": 0 },
+              "out_features": { "type": "integer", "minimum": 0 },
+              "effective_hidden_dim": { "type": "integer", "minimum": 0 }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "pruning": {
+      "type": "object",
+      "required": ["summary", "embedded_stats", "options"],
+      "properties": {
+        "summary": { "type": "object" },
+        "embedded_stats": { "type": ["object", "null"] },
+        "options": { "type": ["object", "null"] }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

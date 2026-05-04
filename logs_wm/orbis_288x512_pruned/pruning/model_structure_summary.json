@@ -1,0 +1,342 @@
+{
+  "mlp_module_count": 48,
+  "mlp_modules": [
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "space",
+      "name": "blocks.0.space_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "time",
+      "name": "blocks.0.time_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "space",
+      "name": "blocks.1.space_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "time",
+      "name": "blocks.1.time_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "space",
+      "name": "blocks.2.space_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "time",
+      "name": "blocks.2.time_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "space",
+      "name": "blocks.3.space_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "time",
+      "name": "blocks.3.time_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "space",
+      "name": "blocks.4.space_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "time",
+      "name": "blocks.4.time_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "space",
+      "name": "blocks.5.space_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "time",
+      "name": "blocks.5.time_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "space",
+      "name": "blocks.6.space_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "time",
+      "name": "blocks.6.time_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "space",
+      "name": "blocks.7.space_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "time",
+      "name": "blocks.7.time_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "space",
+      "name": "blocks.8.space_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "time",
+      "name": "blocks.8.time_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "space",
+      "name": "blocks.9.space_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "time",
+      "name": "blocks.9.time_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "space",
+      "name": "blocks.10.space_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "time",
+      "name": "blocks.10.time_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "space",
+      "name": "blocks.11.space_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "time",
+      "name": "blocks.11.time_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "space",
+      "name": "blocks.12.space_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "time",
+      "name": "blocks.12.time_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "space",
+      "name": "blocks.13.space_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "time",
+      "name": "blocks.13.time_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "space",
+      "name": "blocks.14.space_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "time",
+      "name": "blocks.14.time_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "space",
+      "name": "blocks.15.space_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "time",
+      "name": "blocks.15.time_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "space",
+      "name": "blocks.16.space_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "time",
+      "name": "blocks.16.time_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "space",
+      "name": "blocks.17.space_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "time",
+      "name": "blocks.17.time_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "space",
+      "name": "blocks.18.space_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "time",
+      "name": "blocks.18.time_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "space",
+      "name": "blocks.19.space_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "time",
+      "name": "blocks.19.time_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "space",
+      "name": "blocks.20.space_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "time",
+      "name": "blocks.20.time_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "space",
+      "name": "blocks.21.space_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "time",
+      "name": "blocks.21.time_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "space",
+      "name": "blocks.22.space_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "time",
+      "name": "blocks.22.time_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "space",
+      "name": "blocks.23.space_mlp"
+    },
+    {
+      "effective_hidden_dim": 2432,
+      "hidden_features": 2432,
+      "kind": "mlp",
+      "layer_group": "time",
+      "name": "blocks.23.time_mlp"
+    }
+  ],
+  "pruner": "local_mlp_pruner"
+}

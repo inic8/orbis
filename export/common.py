@@ -35,15 +35,19 @@ class ResolvedArtifactPaths:
 
 class ArtifactResolver:
     def __init__(self, run_dir: Path = DEFAULT_RUN_DIR):
-        self.run_dir = run_dir
+        self.run_dir = run_dir.resolve()
         self.ckpt_dir = self.run_dir / "checkpoints"
         self.onnx_dir = self.run_dir / "onnx"
 
     def add_common_arguments(self, parser: argparse.ArgumentParser, *, include_onnx: bool = True) -> None:
+        parser.add_argument("--run-dir", type=str, default=None)
         parser.add_argument("--config-path", type=str, default=None)
         parser.add_argument("--ckpt-path", type=str, default=None)
         if include_onnx:
             parser.add_argument("--onnx-path", type=str, default=None)
+
+    def for_run_dir(self, run_dir: Path) -> "ArtifactResolver":
+        return ArtifactResolver(run_dir=run_dir)
 
     def expand_path(self, path_str: str) -> Path:
         path = Path(path_str).expanduser()
@@ -69,20 +73,25 @@ class ArtifactResolver:
         return self.latest_matching_file(self.ckpt_dir, "*.ckpt")
 
     def default_onnx_path(self) -> Path:
-        return self.latest_matching_file(self.onnx_dir, "*.onnx")
+        if self.onnx_dir.exists():
+            matches = [path for path in self.onnx_dir.glob("*.onnx") if path.is_file()]
+            if matches:
+                return max(matches, key=lambda path: path.stat().st_mtime)
+        return self.onnx_dir / "last.onnx"
 
     def resolve_from_args(self, args: argparse.Namespace, *, include_onnx: bool = True) -> ResolvedArtifactPaths:
-        config_path = self.resolve_existing_file(
-            self.expand_path(args.config_path) if args.config_path else self.default_config_path(),
+        resolver = self.for_run_dir(self.expand_path(args.run_dir)) if getattr(args, "run_dir", None) else self
+        config_path = resolver.resolve_existing_file(
+            resolver.expand_path(args.config_path) if args.config_path else resolver.default_config_path(),
             "Config file",
         )
-        ckpt_path = self.resolve_existing_file(
-            self.expand_path(args.ckpt_path) if args.ckpt_path else self.default_ckpt_path(),
+        ckpt_path = resolver.resolve_existing_file(
+            resolver.expand_path(args.ckpt_path) if args.ckpt_path else resolver.default_ckpt_path(),
             "Checkpoint file",
         )
         onnx_path: Path | None = None
         if include_onnx:
-            onnx_path = self.expand_path(args.onnx_path) if args.onnx_path else self.default_onnx_path()
+            onnx_path = resolver.expand_path(args.onnx_path) if args.onnx_path else resolver.default_onnx_path()
         return ResolvedArtifactPaths(config_path=config_path, ckpt_path=ckpt_path, onnx_path=onnx_path)
 
 
@@ -204,23 +213,29 @@ class VitOnnxExporter:
         model: nn.Module,
         onnx_path: Path,
         *,
+        batch_size: int = 1,
+        context_frames: int | None = None,
+        target_frames: int = 1,
         opset: int = 17,
         do_constant_folding: bool = True,
+        dynamic_axes: Mapping[str, Mapping[int, str]] | None = None,
     ) -> Path:
         input_h, input_w = resolve_input_hw(model.vit.input_size)
         device = next(model.parameters()).device
-        dummy_target_t = torch.randn(1, 1, model.vit.in_channels, input_h, input_w, device=device)
-        dummy_context_frames = max(1, int(getattr(model.vit, "max_num_frames", 2)) - 1)
+        dummy_target_t = torch.randn(batch_size, target_frames, model.vit.in_channels, input_h, input_w, device=device)
+        dummy_context_frames = context_frames
+        if dummy_context_frames is None:
+            dummy_context_frames = max(1, int(getattr(model.vit, "max_num_frames", 2)) - target_frames)
         dummy_context = torch.randn(
-            1,
+            batch_size,
             dummy_context_frames,
             model.vit.in_channels,
             input_h,
             input_w,
             device=device,
         )
-        dummy_t = torch.rand(1, device=device)
-        dummy_frame_rate = torch.ones(1, device=device)
+        dummy_t = torch.rand(batch_size, device=device)
+        dummy_frame_rate = torch.ones(batch_size, device=device)
         wrapper = VitOnnxWrapper(model.vit).eval()
         return self.exporter.export(
             wrapper,
@@ -230,13 +245,7 @@ class VitOnnxExporter:
             output_names=["output"],
             opset=opset,
             do_constant_folding=do_constant_folding,
-            dynamic_axes={
-                "target_t": {0: "batch"},
-                "context": {0: "batch", 1: "context_frames"},
-                "t": {0: "batch"},
-                "frame_rate": {0: "batch"},
-                "output": {0: "batch"},
-            },
+            dynamic_axes=dynamic_axes,
         )
 
 
