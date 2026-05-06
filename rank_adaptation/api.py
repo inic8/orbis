@@ -774,15 +774,18 @@ def rank_adapt_orbis_checkpoint(
     checkpoint_path = _absolute_path(checkpoint_path)
     if not checkpoint_path.exists():
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+    source_checkpoint_path = checkpoint_path.absolute()
+    resolved_checkpoint_path = checkpoint_path.resolve()
 
     resolved_config_path = _detect_config_path(checkpoint_path, config_path)
+    resolved_config_path = resolved_config_path.absolute()
     rank_adaptation_options = options or OrbisRankAdaptationOptions()
     modules = resolve_orbis_modules(
         orbis_repo_path=orbis_repo_path,
-        checkpoint_path=checkpoint_path,
+        checkpoint_path=source_checkpoint_path,
     )
     model, model_config = _load_orbis_model(
-        checkpoint_path,
+        source_checkpoint_path,
         resolved_config_path,
         modules,
         orbis_repo_path=orbis_repo_path,
@@ -795,7 +798,7 @@ def rank_adapt_orbis_checkpoint(
     params_before = count_all_params(model)
     vit_params_before = count_vit_params(model, vit_attr)
     linear_params_before = count_linear_params(model)
-    checkpoint_size_before_mb = checkpoint_path.stat().st_size / (1024 * 1024)
+    checkpoint_size_before_mb = source_checkpoint_path.stat().st_size / (1024 * 1024)
 
     benchmark_results = None
     if rank_adaptation_options.run_benchmark:
@@ -814,7 +817,7 @@ def rank_adapt_orbis_checkpoint(
 
     output_dir = _resolve_output_dir(
         output_dir,
-        checkpoint_path=checkpoint_path,
+        checkpoint_path=source_checkpoint_path,
         config_path=resolved_config_path,
         orbis_repo_path=orbis_repo_path,
     )
@@ -914,6 +917,8 @@ def rank_adapt_orbis_checkpoint(
             "state_dict": compressed_model.state_dict(),
             "rank_adaptation_stats": {
                 "method": "svd_low_rank",
+                "source_checkpoint_path": str(source_checkpoint_path),
+                "resolved_checkpoint_path": str(resolved_checkpoint_path),
                 "params_before": params_before,
                 "params_after": params_after,
                 "reduction_pct": reduction_pct,
@@ -931,7 +936,10 @@ def rank_adapt_orbis_checkpoint(
     checkpoint_size_after_mb = output_checkpoint_path.stat().st_size / (1024 * 1024)
     stats = {
         "method": "svd_low_rank",
-        "checkpoint_path": str(checkpoint_path),
+        "checkpoint_path": str(source_checkpoint_path),
+        "source_checkpoint_path": str(source_checkpoint_path),
+        "resolved_checkpoint_path": str(resolved_checkpoint_path),
+        "output_checkpoint_path": str(output_checkpoint_path),
         "config_path": str(resolved_config_path),
         "params_before": int(params_before),
         "params_after": int(params_after),

@@ -82,6 +82,17 @@ python -m pruning.cli \
   --mlp-prune-layers space
 ```
 
+Run pruning through the shared optimization pipeline:
+
+```bash
+python optimization_pipeline.py \
+  --checkpoint logs_wm/orbis_288x512/checkpoints/last.ckpt \
+  --config logs_wm/orbis_288x512/config.yaml \
+  --steps pruning
+```
+
+To chain pruning with rank adaptation in either order and emit a single `pipeline_summary.json`, see [optimization_pipeline.py](../optimization_pipeline.py) and the top-level [README.md](../readme.md).
+
 ## CLI options
 
 - `--checkpoint`: source checkpoint path.

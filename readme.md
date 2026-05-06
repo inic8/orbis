@@ -56,6 +56,28 @@ For the local structured pruning workflow, run layout, and CLI/API usage, see [p
 
 Rank adaptation and pruning are chainable in this repository. A real integration run from the original world-model checkpoint to rank adaptation and then pruning completed successfully, with pruning able to consume the saved rank-adapted checkpoint.
 
+## Optimization Pipeline
+For a single CLI that chains rank adaptation and pruning in either order, use [optimization_pipeline.py](optimization_pipeline.py).
+
+Example:
+```bash
+python optimization_pipeline.py \
+  --checkpoint logs_wm/orbis_288x512/checkpoints/last.ckpt \
+  --config logs_wm/orbis_288x512/config.yaml \
+  --steps rank_adaptation,pruning
+```
+
+The pipeline writes step-specific outputs under one root directory, for example:
+
+```text
+logs_wm/orbis_288x512_optimized/
+  01_rank_adaptation/
+  02_pruning/
+  pipeline_summary.json
+```
+
+`pipeline_summary.json` records the requested step order, final checkpoint/config paths, per-step history, produced artifacts, and optional before/after evaluation metrics.
+
 ## Postprocessing
 For teacher-student recovery training of pruned models, dataset preparation from videos, and the V100 smoke-test workflow, see [postprocessing/README.md](postprocessing/README.md).
 

@@ -118,6 +118,17 @@ python -m pruning.cli \
   --output-dir logs_wm/orbis_288x512_rank_adapted_pruned
 ```
 
+Run rank adaptation through the shared optimization pipeline:
+
+```bash
+python optimization_pipeline.py \
+  --checkpoint logs_wm/orbis_288x512/checkpoints/last.ckpt \
+  --config logs_wm/orbis_288x512/config.yaml \
+  --steps rank_adaptation
+```
+
+To chain rank adaptation with pruning in either order and emit a single `pipeline_summary.json`, see [optimization_pipeline.py](../optimization_pipeline.py) and the top-level [README.md](../readme.md).
+
 ## CLI options
 
 - `--checkpoint`: source checkpoint path.

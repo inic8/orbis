@@ -14,3 +14,5 @@ gen_rollout/
 .vscode
 postprocessing/data/dataset
 *.mp4
+
+logs_wm/orbis_288x512_*
