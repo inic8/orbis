@@ -18,6 +18,8 @@ from typing import Any, Literal
 import torch
 from omegaconf import OmegaConf
 
+from rank_adaptation.compat import apply_low_rank_metadata, collect_low_rank_metadata, extract_low_rank_metadata_from_checkpoint
+
 from .bootstrap import OrbisModules, resolve_orbis_modules
 from .contracts import (
     INTERFACE_VERSION,
@@ -487,6 +489,9 @@ def _load_orbis_model(
 
     checkpoint = _load_checkpoint(checkpoint_path)
     state_dict = checkpoint["state_dict"] if isinstance(checkpoint, dict) and "state_dict" in checkpoint else checkpoint
+    low_rank_metadata = extract_low_rank_metadata_from_checkpoint(checkpoint)
+    if low_rank_metadata:
+        apply_low_rank_metadata(model, low_rank_metadata)
     model.load_state_dict(state_dict, strict=False)
     return model, config
 
@@ -759,11 +764,13 @@ def prune_orbis_checkpoint(
     output_benchmark_path = pruning_dir / "benchmark_stats.json"
 
     model = model.to("cpu")
+    low_rank_metadata = collect_low_rank_metadata(model)
 
     torch.save(
         {
             "state_dict": model.state_dict(),
             "pruning_stats": stats,
+            "rank_adaptation_metadata": low_rank_metadata,
         },
         output_checkpoint_path,
     )

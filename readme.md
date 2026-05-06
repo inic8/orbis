@@ -48,6 +48,14 @@ python evaluate/rollout.py --exp_dir logs_wm/orbis_288x512 --num_gen_frames 120 
 ## ONNX Export
 For the detailed ONNX export workflow, expected warnings, and parity checks, see [export/README.md](export/README.md).
 
+## Rank Adaptation
+For the repo-local SVD rank-adaptation workflow, output layout, and Python API, see [rank_adaptation/README.md](rank_adaptation/README.md).
+
+## Pruning
+For the local structured pruning workflow, run layout, and CLI/API usage, see [pruning/README.md](pruning/README.md).
+
+Rank adaptation and pruning are chainable in this repository. A real integration run from the original world-model checkpoint to rank adaptation and then pruning completed successfully, with pruning able to consume the saved rank-adapted checkpoint.
+
 ## Postprocessing
 For teacher-student recovery training of pruned models, dataset preparation from videos, and the V100 smoke-test workflow, see [postprocessing/README.md](postprocessing/README.md).
 

@@ -14,6 +14,8 @@ import torch.nn as nn
 from timm.layers.mlp import SwiGLU
 from timm.models.vision_transformer import Mlp
 
+from rank_adaptation.svd_decompose import LowRankLinear
+
 
 @dataclass(frozen=True)
 class StructuredPruningConfig:
@@ -51,6 +53,32 @@ def _norm_layer_factory(module: nn.Module):
     if isinstance(module, nn.Identity):
         return None
     return type(module)
+
+
+def _linear_weight_bias(module: nn.Module) -> tuple[torch.Tensor, torch.Tensor | None]:
+    if isinstance(module, nn.Linear):
+        bias = module.bias.data if module.bias is not None else None
+        return module.weight.data, bias
+    if isinstance(module, LowRankLinear):
+        weight = module.up_proj.weight.data @ module.down_proj.weight.data
+        bias = module.up_proj.bias.data if module.up_proj.bias is not None else None
+        return weight, bias
+    raise TypeError(f"Unsupported linear module type: {type(module)!r}")
+
+
+def _linear_out_features(module: nn.Module) -> int:
+    weight, _ = _linear_weight_bias(module)
+    return int(weight.shape[0])
+
+
+def _linear_in_features(module: nn.Module) -> int:
+    weight, _ = _linear_weight_bias(module)
+    return int(weight.shape[1])
+
+
+def _linear_device_dtype(module: nn.Module) -> tuple[torch.device, torch.dtype]:
+    weight, _ = _linear_weight_bias(module)
+    return weight.device, weight.dtype
 
 
 def _round_target_dim(original_dim: int, prune_ratio: float, round_to: int) -> int:
@@ -106,17 +134,17 @@ def _layer_selected(layer_group: str, requested_layers: str) -> bool:
 
 def _effective_hidden_dim(module: nn.Module) -> int:
     if isinstance(module, Mlp):
-        return module.fc1.out_features
+        return _linear_out_features(module.fc1)
     if isinstance(module, SwiGLU):
-        return (module.fc1_x.out_features * 3) // 2
+        return (_linear_out_features(module.fc1_x) * 3) // 2
     raise TypeError(f"Unsupported MLP module type: {type(module)!r}")
 
 
 def _hidden_features(module: nn.Module) -> int:
     if isinstance(module, Mlp):
-        return module.fc1.out_features
+        return _linear_out_features(module.fc1)
     if isinstance(module, SwiGLU):
-        return module.fc1_x.out_features
+        return _linear_out_features(module.fc1_x)
     raise TypeError(f"Unsupported MLP module type: {type(module)!r}")
 
 
@@ -135,16 +163,21 @@ def _importance_scores(module: nn.Module, metric: str) -> torch.Tensor:
     power = 1 if metric == "l1_weight" else 2
 
     if isinstance(module, Mlp):
-        fc1 = module.fc1.weight.detach().float()
-        fc2 = module.fc2.weight.detach().float()
+        fc1, _ = _linear_weight_bias(module.fc1)
+        fc2, _ = _linear_weight_bias(module.fc2)
+        fc1 = fc1.detach().float()
+        fc2 = fc2.detach().float()
         if power == 1:
             return fc1.abs().sum(dim=1) + fc2.abs().sum(dim=0)
         return fc1.pow(2).sum(dim=1) + fc2.pow(2).sum(dim=0)
 
     if isinstance(module, SwiGLU):
-        gate = module.fc1_g.weight.detach().float()
-        value = module.fc1_x.weight.detach().float()
-        proj = module.fc2.weight.detach().float()
+        gate, _ = _linear_weight_bias(module.fc1_g)
+        value, _ = _linear_weight_bias(module.fc1_x)
+        proj, _ = _linear_weight_bias(module.fc2)
+        gate = gate.detach().float()
+        value = value.detach().float()
+        proj = proj.detach().float()
         if power == 1:
             return gate.abs().sum(dim=1) + value.abs().sum(dim=1) + proj.abs().sum(dim=0)
         return gate.pow(2).sum(dim=1) + value.pow(2).sum(dim=1) + proj.pow(2).sum(dim=0)
@@ -155,62 +188,69 @@ def _importance_scores(module: nn.Module, metric: str) -> torch.Tensor:
 def _build_pruned_mlp(module: Mlp, keep_indices: tuple[int, ...]) -> Mlp:
     act_layer = _act_layer_factory(module.act)
     norm_layer = _norm_layer_factory(module.norm)
+    fc1_weight, fc1_bias = _linear_weight_bias(module.fc1)
+    fc2_weight, fc2_bias = _linear_weight_bias(module.fc2)
+    device, dtype = _linear_device_dtype(module.fc1)
     pruned = Mlp(
-        in_features=module.fc1.in_features,
+        in_features=_linear_in_features(module.fc1),
         hidden_features=len(keep_indices),
-        out_features=module.fc2.out_features,
+        out_features=_linear_out_features(module.fc2),
         act_layer=act_layer,
         norm_layer=norm_layer,
-        bias=(module.fc1.bias is not None, module.fc2.bias is not None),
+        bias=(fc1_bias is not None, fc2_bias is not None),
         drop=(module.drop1.p, module.drop2.p),
         use_conv=False,
-        device=module.fc1.weight.device,
-        dtype=module.fc1.weight.dtype,
+        device=device,
+        dtype=dtype,
     )
-    index_tensor = torch.tensor(keep_indices, device=module.fc1.weight.device, dtype=torch.long)
-    pruned.fc1.weight.data.copy_(module.fc1.weight.data.index_select(0, index_tensor))
-    if module.fc1.bias is not None:
-        pruned.fc1.bias.data.copy_(module.fc1.bias.data.index_select(0, index_tensor))
+    index_tensor = torch.tensor(keep_indices, device=device, dtype=torch.long)
+    pruned.fc1.weight.data.copy_(fc1_weight.data.index_select(0, index_tensor))
+    if fc1_bias is not None:
+        pruned.fc1.bias.data.copy_(fc1_bias.data.index_select(0, index_tensor))
     if not isinstance(module.norm, nn.Identity):
         pruned.norm.weight.data.copy_(module.norm.weight.data.index_select(0, index_tensor))
         pruned.norm.bias.data.copy_(module.norm.bias.data.index_select(0, index_tensor))
-    pruned.fc2.weight.data.copy_(module.fc2.weight.data.index_select(1, index_tensor))
-    if module.fc2.bias is not None:
-        pruned.fc2.bias.data.copy_(module.fc2.bias.data)
+    pruned.fc2.weight.data.copy_(fc2_weight.data.index_select(1, index_tensor))
+    if fc2_bias is not None:
+        pruned.fc2.bias.data.copy_(fc2_bias.data)
     return pruned
 
 
 def _build_pruned_swiglu(module: SwiGLU, keep_indices: tuple[int, ...]) -> SwiGLU:
     act_layer = _act_layer_factory(module.act)
     norm_layer = _norm_layer_factory(module.norm)
+    gate_weight, gate_bias = _linear_weight_bias(module.fc1_g)
+    value_weight, value_bias = _linear_weight_bias(module.fc1_x)
+    proj_weight, proj_bias = _linear_weight_bias(module.fc2)
+    device, dtype = _linear_device_dtype(module.fc1_x)
     pruned = SwiGLU(
-        in_features=module.fc1_x.in_features,
+        in_features=_linear_in_features(module.fc1_x),
         hidden_features=len(keep_indices),
-        out_features=module.fc2.out_features,
+        out_features=_linear_out_features(module.fc2),
         act_layer=act_layer,
         norm_layer=norm_layer,
         bias=(
-            module.fc1_g.bias is not None,
-            module.fc2.bias is not None,
+            gate_bias is not None,
+            proj_bias is not None,
         ),
         drop=(module.drop1.p, module.drop2.p),
         align_to=0,
-        device=module.fc1_x.weight.device,
-        dtype=module.fc1_x.weight.dtype,
+        device=device,
+        dtype=dtype,
     )
-    index_tensor = torch.tensor(keep_indices, device=module.fc1_x.weight.device, dtype=torch.long)
-    pruned.fc1_g.weight.data.copy_(module.fc1_g.weight.data.index_select(0, index_tensor))
-    pruned.fc1_x.weight.data.copy_(module.fc1_x.weight.data.index_select(0, index_tensor))
-    if module.fc1_g.bias is not None:
-        pruned.fc1_g.bias.data.copy_(module.fc1_g.bias.data.index_select(0, index_tensor))
-    if module.fc1_x.bias is not None:
-        pruned.fc1_x.bias.data.copy_(module.fc1_x.bias.data.index_select(0, index_tensor))
+    index_tensor = torch.tensor(keep_indices, device=device, dtype=torch.long)
+    pruned.fc1_g.weight.data.copy_(gate_weight.data.index_select(0, index_tensor))
+    pruned.fc1_x.weight.data.copy_(value_weight.data.index_select(0, index_tensor))
+    if gate_bias is not None:
+        pruned.fc1_g.bias.data.copy_(gate_bias.data.index_select(0, index_tensor))
+    if value_bias is not None:
+        pruned.fc1_x.bias.data.copy_(value_bias.data.index_select(0, index_tensor))
     if not isinstance(module.norm, nn.Identity):
         pruned.norm.weight.data.copy_(module.norm.weight.data.index_select(0, index_tensor))
         pruned.norm.bias.data.copy_(module.norm.bias.data.index_select(0, index_tensor))
-    pruned.fc2.weight.data.copy_(module.fc2.weight.data.index_select(1, index_tensor))
-    if module.fc2.bias is not None:
-        pruned.fc2.bias.data.copy_(module.fc2.bias.data)
+    pruned.fc2.weight.data.copy_(proj_weight.data.index_select(1, index_tensor))
+    if proj_bias is not None:
+        pruned.fc2.bias.data.copy_(proj_bias.data)
     return pruned
 
 
