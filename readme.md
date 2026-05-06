@@ -48,6 +48,9 @@ python evaluate/rollout.py --exp_dir logs_wm/orbis_288x512 --num_gen_frames 120 
 ## ONNX Export
 For the detailed ONNX export workflow, expected warnings, and parity checks, see [export/README.md](export/README.md).
 
+## Postprocessing
+For teacher-student recovery training of pruned models, dataset preparation from videos, and the V100 smoke-test workflow, see [postprocessing/README.md](postprocessing/README.md).
+
 Alternatively, you can either specify a configuration file for the inference data:
 ```bash
 python evaluate/rollout.py --exp_dir STAGE2_EXPERIMENT_DIR --val_config val_config.yaml --num_gen_frames 120 --num_steps 30

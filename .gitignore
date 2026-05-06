@@ -12,3 +12,5 @@ gen_rollout/
 .venv
 
 .vscode
+postprocessing/data/dataset
+*.mp4

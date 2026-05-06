@@ -1,0 +1,58 @@
+model:
+  base_learning_rate: 1.0e-05
+  adjust_learning_rate: false
+  find_unused_parameters: true
+  gradient_clip_algorithm: norm
+  precision: 16-mixed
+  grad_clip: 1.0
+  grad_acc_steps: 2
+  target: postprocessing.student_teacher_recovery.TeacherStudentRecoveryModelIF
+  params:
+    teacher_use_ema: true
+    output_distill_weight: 0.25
+    feature_distill_weight: 0.05
+    feature_distill_stride: 4
+    weight_decay: 0.01
+    strict_checkpoint_load: true
+    train_space_mlp: true
+    train_time_mlp: true
+    train_adaln: true
+    train_time_attn_modulation: true
+    train_final_layer: true
+    train_t_embedder: true
+    train_frame_emb: true
+    warmup_steps: 1000
+    min_lr_multiplier: 0.2
+    enc_scale: 4
+    enc_scale_dino: 4
+    adjust_lr_to_batch_size: false
+data:
+  target: data.datamodule.DataModuleFromConfig
+  params:
+    batch_size: 2
+    num_workers: 2
+    train:
+      target: data.custom_multiframe.MultiHDF5DatasetMultiFrameRandomizeFrameRate
+      params:
+        hdf5_paths_file: /mnt/models/orbis/postprocessing/data/dataset/train_hdf5_paths.txt
+        size:
+        - 288
+        - 512
+        num_frames: 6
+        stored_data_frame_rate: 5
+        frame_rates_and_weights:
+        - - 5
+          - 1
+        aug: random_shift
+        scale_min: 0.15
+        scale_max: 0.5
+    validation:
+      target: data.custom_multiframe.MultiHDF5DatasetMultiFrameFromJSONFrameRateWrapper
+      params:
+        samples_json: /mnt/models/orbis/postprocessing/data/dataset/val_samples.json
+        size:
+        - 288
+        - 512
+        num_frames: 6
+        stored_data_frame_rate: 5
+        frame_rate: 5

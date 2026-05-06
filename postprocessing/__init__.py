@@ -4,4 +4,4 @@
 # Funding: German Research Project NXTAIM
 # See LICENSE for the full MIT license text.
 
-from .stage1_recovery import Stage1RecoveryModelIF
+from .student_teacher_recovery import TeacherStudentRecoveryModelIF
