@@ -1,6 +1,6 @@
 # ONNX Export Workflow
 
-This directory contains the ONNX export path for `model.vit` and a set of debug helpers used to validate intermediate submodules before trusting the final exported graph.
+This directory contains the ONNX export path for `model.vit`, optional deployment-target profiling for Orin and Thor, and a set of debug helpers used to validate intermediate submodules before trusting the final exported graph.
 
 The main entry point is:
 
@@ -12,11 +12,17 @@ python export/export_to_onnx.py --run-dir logs_wm/orbis_288x512/
 
 The exporter wraps `model.vit` and writes a single ONNX file for the world-model transformer path. It does not export the full training stack or Lightning module.
 
+Optionally, the same workflow can also build a TensorRT engine from the exported ONNX artifact. The TensorRT stage is kept generic by using deployment-target profiles and explicit input-shape limits rather than hard-coding a single model variant.
+
 By default, the script resolves artifacts from the run directory:
 
 - `config.yaml`
 - `checkpoints/*.ckpt` using the most recent checkpoint by modification time
 - `onnx/last.onnx` if no ONNX file exists yet, otherwise the most recent `onnx/*.onnx`
+
+If TensorRT building is enabled, the default engine artifact is written under:
+
+- `tensorrt/<onnx_stem>_<deployment_target>_<precision>.engine`
 
 For the default repo layout this means a command like:
 
@@ -61,6 +67,27 @@ python export/export_to_onnx.py \
   --rtol 1e-4
 ```
 
+Build an Orin-oriented TensorRT engine after ONNX export:
+
+```bash
+python export/export_to_onnx.py \
+  --run-dir logs_wm/orbis_288x512/ \
+  --deployment-target orin \
+  --build-tensorrt
+```
+
+Build a Thor-oriented TensorRT engine with explicit profile limits:
+
+```bash
+python export/export_to_onnx.py \
+  --run-dir logs_wm/orbis_288x512/ \
+  --deployment-target thor \
+  --build-tensorrt \
+  --trt-max-batch-size 8 \
+  --trt-max-context-frames 8 \
+  --trt-max-target-frames 2
+```
+
 Available knobs:
 
 - `--run-dir`: experiment directory containing `config.yaml`, `checkpoints/`, and usually `onnx/`
@@ -78,10 +105,32 @@ Available knobs:
 - `--atol`: absolute tolerance for parity checks
 - `--rtol`: relative tolerance for parity checks
 - `--disable-constant-folding`: export without constant folding
+- `--deployment-target`: one of `generic`, `orin`, or `thor`; selects default TensorRT profile settings
+- `--build-tensorrt`: also build a TensorRT engine from the exported ONNX artifact
+- `--engine-path`: explicit TensorRT engine output path override
+- `--tensorrt-backend`: TensorRT build backend, one of `auto`, `python`, or `trtexec`
+- `--trt-workspace-gb`: TensorRT workspace memory pool size in GB
+- `--trt-opt-batch-size`: TensorRT optimization profile batch size
+- `--trt-max-batch-size`: TensorRT optimization profile maximum batch size
+- `--trt-max-context-frames`: maximum context-frame count in the TensorRT optimization profile
+- `--trt-max-target-frames`: maximum target-frame count in the TensorRT optimization profile
+- `--trt-fp16` / `--trt-no-fp16`: force-enable or disable FP16 engine building
+
+## Deployment targets
+
+The export workflow now exposes three deployment-target profiles:
+
+- `generic`: neutral defaults suitable for general TensorRT deployment
+- `orin`: lower default batch ceilings for Jetson Orin-style deployment
+- `thor`: larger default workspace and batch ceilings for Thor-class deployment
+
+These profiles only affect TensorRT defaults. ONNX export and ONNX parity checks remain the same across targets.
+
+If you need tighter deployment constraints, override the profile defaults explicitly with the `--trt-*` shape and workspace flags.
 
 ## Expected workflow output
 
-The script is intentionally methodical. A successful run is split into four stages.
+The script is intentionally methodical. A successful run is split into four stages for ONNX-only export, or five stages when TensorRT building is requested.
 
 ### 1. Loading model
 
@@ -98,6 +147,8 @@ Checkpoint /mnt/models/orbis/logs_wm/orbis_288x512/checkpoints/last.ckpt
 ONNX       /mnt/models/orbis/logs_wm/orbis_288x512/onnx/last.onnx
 Tolerance  atol=1.0e-04 rtol=1.0e-04
 ```
+
+If TensorRT building is requested, the header also prints the selected deployment target and the engine output path.
 
 During loading, several warnings or info lines can be normal:
 
@@ -206,6 +257,29 @@ Success criteria are intentionally asymmetric:
 
 This is a practical guardrail: the unoptimized ONNX graph is treated as the correctness baseline.
 
+## 5. Optional TensorRT engine build
+
+If `--build-tensorrt` is provided and the ONNX export passes parity, the workflow can build a TensorRT engine as a final stage.
+
+Typical output looks like:
+
+```text
+[5] Building TensorRT engine for deployment target orin
+  Artifact /mnt/models/orbis/logs_wm/orbis_288x512/tensorrt/last_orin_fp16.engine
+  Backend  trtexec
+  Target   orin
+  Precision fp16
+```
+
+The builder supports two backends:
+
+- `python`: TensorRT Python bindings
+- `trtexec`: the TensorRT command-line builder
+
+With `--tensorrt-backend auto`, the workflow prefers Python bindings first and falls back to `trtexec` if the bindings are unavailable.
+
+TensorRT building is intentionally driven by named input shape profiles for `target_t`, `context`, `t`, and `frame_rate`. That keeps the deployment step aligned with the exported interface rather than with one hard-coded model architecture.
+
 ## Warnings you should expect
 
 A clean export can still emit tracing warnings like these during preflight or final export:
@@ -248,6 +322,8 @@ Common failure categories:
 - a model submodule failing parity during preflight
 - ONNX export failing because of an unsupported op or shape assumption
 - final ONNX artifact loading in ORT but diverging numerically from PyTorch
+- TensorRT engine building failing because neither TensorRT Python bindings nor `trtexec` are available
+- TensorRT engine building failing because the chosen optimization profile does not cover the intended input shapes
 
 If the script aborts before the export step, focus on the first failing preflight module. The debug scripts in this directory are intended for narrowing down those failures further.
 
@@ -264,7 +340,9 @@ Relevant helpers include:
 - The workflow uses CPU ONNX Runtime sessions for parity checks.
 - If `TK_WORK_DIR` is referenced in the config and not already set, the loader tries to infer it from standard repo locations.
 - Optional pretrained components may be loaded or resolved during model construction if they are part of the configured model.
-- The exporter currently targets `model.vit`, not a TensorRT-specific or end-to-end deployment package.
+- The exporter currently targets `model.vit`, not a full end-to-end deployment package.
+- TensorRT building is optional and only runs when `--build-tensorrt` is provided.
+- TensorRT engine validation is currently a build-time step only; ONNX parity remains the main correctness gate.
 
 ## Recommended acceptance checklist
 
@@ -275,5 +353,6 @@ Treat an export as good when all of the following are true:
 - the expected ONNX artifact path is printed in stage 3
 - final parity with graph optimizations disabled shows `PASS`
 - ideally, final parity with graph optimizations enabled also shows `PASS`
+- if TensorRT is requested, the expected engine artifact path is printed in stage 5 and the build completes without backend errors
 
 If you need to debug a failing export, start from the first failing preflight component rather than from the final ONNX artifact.

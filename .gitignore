@@ -2,6 +2,7 @@ node_modules
 *.pt
 *.ckpt
 *.onnx
+*.engine
 __pycache__
 .cache
 .ipynb_checkpoints

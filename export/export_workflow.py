@@ -24,6 +24,7 @@ from export.common import (
     make_vit_inputs,
 )
 from export.debug_runner import ParitySuiteSummary, SingleOutputParityRunner
+from export.deployment import TensorRTEngineBuildRequest, TensorRTEngineBuilder, build_vit_tensorrt_shape_profiles
 
 
 RESET = "\033[0m"
@@ -62,6 +63,15 @@ class ExportWorkflowConfig:
     atol: float
     rtol: float
     do_constant_folding: bool
+    deployment_target: str
+    tensorrt_engine_path: Path | None
+    tensorrt_backend: str
+    tensorrt_workspace_gb: float
+    tensorrt_enable_fp16: bool
+    tensorrt_opt_batch_size: int
+    tensorrt_max_batch_size: int
+    tensorrt_max_context_frames: int
+    tensorrt_max_target_frames: int
 
 
 @dataclass(frozen=True)
@@ -83,12 +93,14 @@ class ExportVerificationWorkflow:
         parity_runner: SingleOutputParityRunner,
         session_factory: OnnxSessionFactory,
         vit_exporter: VitOnnxExporter,
+        tensorrt_builder: TensorRTEngineBuilder | None = None,
     ):
         self.config = config
         self.model_loader = model_loader
         self.parity_runner = parity_runner
         self.session_factory = session_factory
         self.vit_exporter = vit_exporter
+        self.tensorrt_builder = tensorrt_builder or TensorRTEngineBuilder()
         self.model: nn.Module | None = None
 
     def run(self) -> int:
@@ -136,6 +148,19 @@ class ExportVerificationWorkflow:
                 f"\n{status_badge(True)} "
                 f"{style('Export succeeded and final parity checks passed with graph optimizations both disabled and enabled.', BOLD)}"
             )
+
+        if self.config.tensorrt_engine_path is not None:
+            print(f"\n{section_title(5, f'Building TensorRT engine for deployment target {self.config.deployment_target}')}")
+            try:
+                engine_result = self._build_tensorrt_engine(onnx_path)
+            except Exception as exc:
+                print(f"\n{status_badge(False)} {style('TensorRT engine build failed.', BOLD)}")
+                print(f"  {style(str(exc), DIM)}")
+                return 1
+            print(f"  {style('Artifact', DIM)} {engine_result.engine_path}")
+            print(f"  {style('Backend ', DIM)} {engine_result.backend}")
+            print(f"  {style('Target  ', DIM)} {engine_result.deployment_target}")
+            print(f"  {style('Precision', DIM)} {'fp16' if engine_result.enable_fp16 else 'fp32'}")
         return 0
 
     def _print_header(self) -> None:
@@ -146,8 +171,42 @@ class ExportVerificationWorkflow:
         print(f"{style('Config     ', DIM)} {artifacts.config_path}")
         print(f"{style('Checkpoint', DIM)} {artifacts.ckpt_path}")
         print(f"{style('ONNX      ', DIM)} {artifacts.onnx_path}")
+        print(f"{style('Target    ', DIM)} {self.config.deployment_target}")
+        if self.config.tensorrt_engine_path is not None:
+            print(f"{style('TensorRT  ', DIM)} {self.config.tensorrt_engine_path}")
         print(f"{style('Tolerance ', DIM)} atol={self.config.atol:.1e} rtol={self.config.rtol:.1e}")
         print(f"\n{section_title(1, 'Loading model')}")
+
+    def _build_tensorrt_engine(self, onnx_path: Path):
+        model = self._require_model()
+        input_hw = tuple(int(value) for value in getattr(model.vit, 'input_size', ()))
+        if len(input_hw) != 2:
+            from export.common import resolve_input_hw
+
+            input_hw = resolve_input_hw(getattr(model.vit, 'input_size', None))
+        profiles = build_vit_tensorrt_shape_profiles(
+            batch_size=self.config.batch_size,
+            opt_batch_size=self.config.tensorrt_opt_batch_size,
+            max_batch_size=self.config.tensorrt_max_batch_size,
+            context_frames=self.config.context_frames,
+            max_context_frames=self.config.tensorrt_max_context_frames,
+            target_frames=self.config.target_frames,
+            max_target_frames=self.config.tensorrt_max_target_frames,
+            in_channels=int(model.vit.in_channels),
+            input_hw=input_hw,
+        )
+        request = TensorRTEngineBuildRequest(
+            onnx_path=onnx_path,
+            engine_path=self.config.tensorrt_engine_path,
+            deployment_target=self.config.deployment_target,
+            backend=self.config.tensorrt_backend,
+            workspace_gb=self.config.tensorrt_workspace_gb,
+            enable_fp16=self.config.tensorrt_enable_fp16,
+            min_shapes=profiles.min_shapes,
+            opt_shapes=profiles.opt_shapes,
+            max_shapes=profiles.max_shapes,
+        )
+        return self.tensorrt_builder.build(request)
 
     def _require_model(self) -> nn.Module:
         if self.model is None:
