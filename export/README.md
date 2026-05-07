@@ -5,7 +5,7 @@ This directory contains the ONNX export path for `model.vit`, optional deploymen
 The main entry point is:
 
 ```bash
-python export/export_to_onnx.py --run-dir logs_wm/orbis_288x512/
+python export/export_to_device.py --run-dir logs_wm/orbis_288x512/
 ```
 
 ## What gets exported
@@ -27,7 +27,7 @@ If TensorRT building is enabled, the default engine artifact is written under:
 For the default repo layout this means a command like:
 
 ```bash
-python export/export_to_onnx.py --run-dir logs_wm/orbis_288x512/
+python export/export_to_device.py --run-dir logs_wm/orbis_288x512/
 ```
 
 typically uses:
@@ -39,7 +39,7 @@ typically uses:
 You can override any of these paths explicitly:
 
 ```bash
-python export/export_to_onnx.py \
+python export/export_to_device.py \
   --config-path logs_wm/orbis_288x512/config.yaml \
   --ckpt-path logs_wm/orbis_288x512/checkpoints/last.ckpt \
   --onnx-path logs_wm/orbis_288x512/onnx/custom_name.onnx
@@ -50,13 +50,13 @@ python export/export_to_onnx.py \
 Minimal command:
 
 ```bash
-python export/export_to_onnx.py --run-dir logs_wm/orbis_288x512/
+python export/export_to_device.py --run-dir logs_wm/orbis_288x512/
 ```
 
 Useful options:
 
 ```bash
-python export/export_to_onnx.py \
+python export/export_to_device.py \
   --run-dir logs_wm/orbis_288x512/ \
   --batch-size 1 \
   --context-frames 4 \
@@ -70,7 +70,7 @@ python export/export_to_onnx.py \
 Build an Orin-oriented TensorRT engine after ONNX export:
 
 ```bash
-python export/export_to_onnx.py \
+python export/export_to_device.py \
   --run-dir logs_wm/orbis_288x512/ \
   --deployment-target orin \
   --build-tensorrt
@@ -79,7 +79,7 @@ python export/export_to_onnx.py \
 Build a Thor-oriented TensorRT engine with explicit profile limits:
 
 ```bash
-python export/export_to_onnx.py \
+python export/export_to_device.py \
   --run-dir logs_wm/orbis_288x512/ \
   --deployment-target thor \
   --build-tensorrt \
@@ -87,6 +87,8 @@ python export/export_to_onnx.py \
   --trt-max-context-frames 8 \
   --trt-max-target-frames 2
 ```
+
+If `--build-tensorrt` is requested and the chosen ONNX file already exists, the workflow reuses that ONNX artifact and skips the ONNX preflight, export, and parity stages.
 
 Available knobs:
 
@@ -280,6 +282,49 @@ With `--tensorrt-backend auto`, the workflow prefers Python bindings first and f
 
 TensorRT building is intentionally driven by named input shape profiles for `target_t`, `context`, `t`, and `frame_rate`. That keeps the deployment step aligned with the exported interface rather than with one hard-coded model architecture.
 
+## 6. TensorRT rollout validation
+
+Once an engine has been built, you can validate rollout quality with the TensorRT-specific evaluator:
+
+```bash
+python evaluate/rollout_device.py \
+  --exp_dir logs_wm/orbis_288x512 \
+  --engine tensorrt/v100_e2e_generic_fp16.engine \
+  --num_videos 8 \
+  --num_gen_frames 4 \
+  --save_real true
+```
+
+This writes generated frames and GIFs under a TensorRT-specific output folder such as:
+
+- `logs_wm/orbis_288x512/gen_rollout_tensorrt/<data_tag>/...`
+
+To compare the TensorRT rollout against a reference rollout, first generate the reference with the same seed and rollout settings, then point `--reference_rollout_dir` at that directory:
+
+```bash
+python evaluate/rollout_onnx.py \
+  --exp_dir logs_wm/orbis_288x512 \
+  --onnx onnx/last.onnx \
+  --num_videos 8 \
+  --num_gen_frames 4 \
+  --seed 42
+
+python evaluate/rollout_device.py \
+  --exp_dir logs_wm/orbis_288x512 \
+  --engine tensorrt/v100_e2e_generic_fp16.engine \
+  --num_videos 8 \
+  --num_gen_frames 4 \
+  --seed 42 \
+  --reference_rollout_dir gen_rollout_onnx/default_data/ep0iter0_30steps
+```
+
+The TensorRT evaluator writes `rollout_report.json` into the output folder. When `--reference_rollout_dir` is provided, the report also includes frame-wise comparison aggregates:
+
+- mean absolute error
+- mean squared error
+- mean PSNR in dB
+- number of compared and missing reference frames
+
 ## Warnings you should expect
 
 A clean export can still emit tracing warnings like these during preflight or final export:
@@ -298,7 +343,7 @@ For the captured successful run, those tracer warnings were present and the expo
 For the run:
 
 ```bash
-python export/export_to_onnx.py --run-dir logs_wm/orbis_288x512/
+python export/export_to_device.py --run-dir logs_wm/orbis_288x512/
 ```
 
 the important outcome is:

@@ -103,54 +103,67 @@ class ExportVerificationWorkflow:
         self.tensorrt_builder = tensorrt_builder or TensorRTEngineBuilder()
         self.model: nn.Module | None = None
 
+    def _should_reuse_existing_onnx(self) -> bool:
+        onnx_path = self.config.artifacts.onnx_path
+        return self.config.tensorrt_engine_path is not None and onnx_path is not None and onnx_path.is_file()
+
     def run(self) -> int:
         self._print_header()
         self.model = self.model_loader.load(self.config.artifacts.config_path, self.config.artifacts.ckpt_path)
 
-        print(f"\n{section_title(2, 'Running preflight ONNX parity checks')}")
-        preflight_results = self._run_preflight_checks()
-        for result in preflight_results:
-            self._print_check_result(result)
+        reused_existing_onnx = self._should_reuse_existing_onnx()
 
-        if not all(result.passed for result in preflight_results):
-            print(f"\n{status_badge(False)} {style('Export aborted because at least one preflight check failed.', BOLD)}")
-            return 1
-
-        print(f"\n{section_title(3, 'Exporting model.vit to ONNX')}")
-        onnx_path = self.vit_exporter.export(
-            self._require_model(),
-            self.config.artifacts.onnx_path,
-            batch_size=self.config.batch_size,
-            context_frames=self.config.context_frames,
-            target_frames=self.config.target_frames,
-            opset=self.config.opset,
-            do_constant_folding=self.config.do_constant_folding,
-        )
-        print(f"  {style('Artifact', DIM)} {onnx_path}")
-
-        print(f"\n{section_title(4, 'Checking exported model parity with graph optimizations disabled and enabled')}")
-        final_no_opt = self._check_exported_vit_parity(disable_optimizations=True)
-        final_opt = self._check_exported_vit_parity(disable_optimizations=False)
-        self._print_check_result(final_no_opt)
-        self._print_check_result(final_opt)
-
-        if not final_no_opt.passed:
-            print(f"\n{status_badge(False)} {style('Final exported model failed parity with graph optimizations disabled.', BOLD)}")
-            return 1
-
-        if not final_opt.passed:
-            print(
-                f"\n{style(' WARN ', BOLD, YELLOW)} "
-                f"{style('Export succeeded, but graph optimizations introduce mismatches. Use ORT graph optimizations disabled.', BOLD)}"
-            )
+        if reused_existing_onnx:
+            onnx_path = self.config.artifacts.onnx_path
+            print(f"\n{section_title(2, 'Reusing existing ONNX artifact for TensorRT build')}")
+            print(f"  {style('Artifact', DIM)} {onnx_path}")
+            print(f"  {style('Note    ', DIM)} Skipping ONNX preflight, export, and parity checks because the artifact already exists.")
         else:
-            print(
-                f"\n{status_badge(True)} "
-                f"{style('Export succeeded and final parity checks passed with graph optimizations both disabled and enabled.', BOLD)}"
+            print(f"\n{section_title(2, 'Running preflight ONNX parity checks')}")
+            preflight_results = self._run_preflight_checks()
+            for result in preflight_results:
+                self._print_check_result(result)
+
+            if not all(result.passed for result in preflight_results):
+                print(f"\n{status_badge(False)} {style('Export aborted because at least one preflight check failed.', BOLD)}")
+                return 1
+
+            print(f"\n{section_title(3, 'Exporting model.vit to ONNX')}")
+            onnx_path = self.vit_exporter.export(
+                self._require_model(),
+                self.config.artifacts.onnx_path,
+                batch_size=self.config.batch_size,
+                context_frames=self.config.context_frames,
+                target_frames=self.config.target_frames,
+                opset=self.config.opset,
+                do_constant_folding=self.config.do_constant_folding,
             )
+            print(f"  {style('Artifact', DIM)} {onnx_path}")
+
+            print(f"\n{section_title(4, 'Checking exported model parity with graph optimizations disabled and enabled')}")
+            final_no_opt = self._check_exported_vit_parity(disable_optimizations=True)
+            final_opt = self._check_exported_vit_parity(disable_optimizations=False)
+            self._print_check_result(final_no_opt)
+            self._print_check_result(final_opt)
+
+            if not final_no_opt.passed:
+                print(f"\n{status_badge(False)} {style('Final exported model failed parity with graph optimizations disabled.', BOLD)}")
+                return 1
+
+            if not final_opt.passed:
+                print(
+                    f"\n{style(' WARN ', BOLD, YELLOW)} "
+                    f"{style('Export succeeded, but graph optimizations introduce mismatches. Use ORT graph optimizations disabled.', BOLD)}"
+                )
+            else:
+                print(
+                    f"\n{status_badge(True)} "
+                    f"{style('Export succeeded and final parity checks passed with graph optimizations both disabled and enabled.', BOLD)}"
+                )
 
         if self.config.tensorrt_engine_path is not None:
-            print(f"\n{section_title(5, f'Building TensorRT engine for deployment target {self.config.deployment_target}')}")
+            section_index = 3 if reused_existing_onnx else 5
+            print(f"\n{section_title(section_index, f'Building TensorRT engine for deployment target {self.config.deployment_target}')}")
             try:
                 engine_result = self._build_tensorrt_engine(onnx_path)
             except Exception as exc:

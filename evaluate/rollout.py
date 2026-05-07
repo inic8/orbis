@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 import argparse
+import json
 import logging
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Iterable, List, Optional, Tuple
 
@@ -142,6 +144,11 @@ def generate_images(args: argparse.Namespace, unknown_args: List[str]) -> None:
         dynamic_ncols=True,
     )
 
+    if device.type == "cuda":
+        torch.cuda.reset_peak_memory_stats(device)
+        torch.cuda.synchronize(device)
+    rollout_start_time = time.perf_counter()
+
     # Iterate
     sample_idx = 0
     for batch in val_loader:
@@ -153,6 +160,9 @@ def generate_images(args: argparse.Namespace, unknown_args: List[str]) -> None:
             x = batch["images"].to(device, non_blocking=True)
         else:
             x = batch.to(device, non_blocking=True)
+
+        if num_condition_frames is None:
+            num_condition_frames = max(1, x.shape[1] - args.num_gen_frames)
 
         # Conditioning: take first K frames as input
         cond_x = x[:, :num_condition_frames]
@@ -213,8 +223,32 @@ def generate_images(args: argparse.Namespace, unknown_args: List[str]) -> None:
 
     pbar.close()
     if device.type == "cuda":
-        max_mem_gb = torch.cuda.max_memory_allocated() / 1024**3
-        logger.info(f"Max CUDA memory: {max_mem_gb:.02f} GB")
+        torch.cuda.synchronize(device)
+    rollout_latency_ms = (time.perf_counter() - rollout_start_time) * 1000.0
+    peak_memory_gb = (
+        torch.cuda.max_memory_allocated(device) / 1024**3 if device.type == "cuda" else None
+    )
+
+    report = {
+        "backend": "baseline",
+        "checkpoint_path": str(args.ckpt),
+        "frames_dir": str(frames_dir),
+        "num_videos": sample_idx,
+        "num_gen_frames": int(args.num_gen_frames),
+        "num_steps": int(args.num_steps),
+        "seed": int(args.seed),
+        "device": str(device),
+        "latency_ms": rollout_latency_ms,
+        "latency_ms_per_video": (rollout_latency_ms / sample_idx) if sample_idx else None,
+        "peak_memory_gb": peak_memory_gb,
+    }
+    report_path = frames_dir / "rollout_report.json"
+    report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    logger.info(f"Saved rollout report to: {report_path}")
+
+    if device.type == "cuda":
+        logger.info(f"Max CUDA memory: {peak_memory_gb:.02f} GB")
+    logger.info(f"Rollout latency: {rollout_latency_ms:.02f} ms")
 
 
 def build_output_dir(

@@ -10,7 +10,6 @@ import argparse
 import sys
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.append(str(REPO_ROOT))
@@ -29,7 +28,7 @@ VIT_ONNX_EXPORTER = VitOnnxExporter()
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Export model.vit to ONNX using repo-local defaults.")
+    parser = argparse.ArgumentParser(description="Export model.vit for device deployment as ONNX and optionally TensorRT.")
     ARTIFACT_RESOLVER.add_common_arguments(parser)
     parser.add_argument("--block-index", type=int, default=0)
     parser.add_argument("--swin-module-index", type=int, default=0)
@@ -43,7 +42,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--rtol", type=float, default=1e-4)
     parser.add_argument("--disable-constant-folding", action="store_true")
     parser.add_argument("--deployment-target", choices=deployment_target_choices(), default="generic")
-    parser.add_argument("--build-tensorrt", action="store_true", help="Also build a TensorRT engine from the exported ONNX artifact.")
+    parser.add_argument("--build-tensorrt", action="store_true", help="Also build a TensorRT engine from the ONNX artifact.")
     parser.add_argument("--engine-path", type=str, default=None, help="Optional TensorRT engine output path override.")
     parser.add_argument("--tensorrt-backend", choices=["auto", "python", "trtexec"], default="auto")
     parser.add_argument("--trt-workspace-gb", type=float, default=None)

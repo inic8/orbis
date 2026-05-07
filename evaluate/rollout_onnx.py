@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 import argparse
+import json
 import logging
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Iterable, List, Optional, Tuple
 
@@ -122,7 +124,15 @@ def ensure_tokenizer_env(config_path: Path, exp_dir: Path) -> None:
     if os.getenv("TK_WORK_DIR"):
         return
 
-    candidate_roots = [exp_dir.parent, exp_dir, PROJECT_ROOT.parent.parent / "checkpoints"]
+    candidate_roots = [
+        PROJECT_ROOT / "logs_tk",
+        PROJECT_ROOT,
+        exp_dir.parent,
+        exp_dir,
+        config_path.parent,
+        config_path.parent.parent,
+        PROJECT_ROOT.parent.parent / "checkpoints",
+    ]
     for candidate_root in candidate_roots:
         tokenizer_dir = candidate_root / "tokenizer_288x512"
         if tokenizer_dir.exists():
@@ -334,12 +344,8 @@ def generate_images(args: argparse.Namespace, unknown_args: List[str]) -> None:
 
     onnx_path = Path(args.onnx)
     if not onnx_path.exists():
-        logger.warning(f"ONNX model not found at {onnx_path}. Exporting it now.")
-        export_vit_to_onnx(
-            model=model,
-            onnx_path=onnx_path,
-            use_ema=args.evaluate_ema,
-            do_constant_folding=args.enable_constant_folding,
+        raise FileNotFoundError(
+            f"ONNX model not found: {onnx_path}. Export it separately before running rollout_onnx.py."
         )
 
     ort_session = build_ort_session(args)
@@ -373,6 +379,11 @@ def generate_images(args: argparse.Namespace, unknown_args: List[str]) -> None:
     logger.info(f"Saving outputs to: {args.frames_dir}")
     total_batches = length_of(val_loader)
     pbar = tqdm(total=total_batches, desc="Generating", dynamic_ncols=True)
+
+    if device.type == "cuda":
+        torch.cuda.reset_peak_memory_stats(device)
+        torch.cuda.synchronize(device)
+    rollout_start_time = time.perf_counter()
 
     sample_idx = 0
     for batch in val_loader:
@@ -443,8 +454,35 @@ def generate_images(args: argparse.Namespace, unknown_args: List[str]) -> None:
 
     pbar.close()
     if device.type == "cuda":
-        max_mem_gb = torch.cuda.max_memory_allocated() / 1024**3
-        logger.info(f"Max CUDA memory: {max_mem_gb:.02f} GB")
+        torch.cuda.synchronize(device)
+    rollout_latency_ms = (time.perf_counter() - rollout_start_time) * 1000.0
+    peak_memory_gb = (
+        torch.cuda.max_memory_allocated(device) / 1024**3 if device.type == "cuda" else None
+    )
+
+    report = {
+        "backend": "onnx",
+        "checkpoint_path": str(args.ckpt),
+        "onnx_path": str(args.onnx),
+        "frames_dir": str(frames_dir),
+        "num_videos": sample_idx,
+        "num_gen_frames": int(args.num_gen_frames),
+        "num_steps": int(args.num_steps),
+        "seed": int(args.seed),
+        "device": str(device),
+        "latency_ms": rollout_latency_ms,
+        "latency_ms_per_video": (rollout_latency_ms / sample_idx) if sample_idx else None,
+        "peak_memory_gb": peak_memory_gb,
+        "ort_providers": ort_session.get_providers(),
+        "ort_optimizations_enabled": bool(args.enable_ort_optimizations),
+    }
+    report_path = frames_dir / "rollout_report.json"
+    report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    logger.info(f"Saved rollout report to: {report_path}")
+
+    if device.type == "cuda":
+        logger.info(f"Max CUDA memory: {peak_memory_gb:.02f} GB")
+    logger.info(f"Rollout latency: {rollout_latency_ms:.02f} ms")
 
 
 def build_output_dir(
@@ -481,7 +519,6 @@ def parse_args(argv: Optional[List[str]] = None) -> Tuple[argparse.Namespace, Li
     parser.add_argument("--eta", type=float, default=0.0, help="Stochasticity for sampling (passed to roll_out).")
     parser.add_argument("--evaluate_ema", type=str2bool, default=True, help="Kept for CLI compatibility; ONNX uses the weights baked into the exported model.")
     parser.add_argument("--enable_ort_optimizations", type=str2bool, default=False, help="Enable ONNX Runtime graph optimizations. Disabled by default for this model.")
-    parser.add_argument("--enable_constant_folding", type=str2bool, default=False, help="Enable constant folding during ONNX export when auto-exporting a missing model.")
     args, unknown = parser.parse_known_args(argv)
 
     exp_dir = Path(args.exp_dir).resolve()

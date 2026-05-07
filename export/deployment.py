@@ -162,6 +162,21 @@ def _shape_argument(shape_map: Mapping[str, tuple[int, ...]]) -> str:
     return ",".join(f"{name}:{'x'.join(str(dim) for dim in shape)}" for name, shape in shape_map.items())
 
 
+def _resolve_trtexec_path() -> str | None:
+    trtexec_path = shutil.which("trtexec")
+    if trtexec_path:
+        return trtexec_path
+
+    candidate_paths = [
+        Path("/usr/src/tensorrt/bin/trtexec"),
+        Path("/usr/local/tensorrt/bin/trtexec"),
+    ]
+    for candidate in candidate_paths:
+        if candidate.is_file() and candidate.stat().st_mode & 0o111:
+            return str(candidate)
+    return None
+
+
 class TensorRTEngineBuilder:
     def build(self, request: TensorRTEngineBuildRequest) -> TensorRTEngineBuildResult:
         backend = self._resolve_backend(request.backend)
@@ -191,14 +206,14 @@ class TensorRTEngineBuilder:
         if backend == "auto":
             if self._python_bindings_available():
                 return "python"
-            if shutil.which("trtexec"):
+            if _resolve_trtexec_path() is not None:
                 return "trtexec"
             raise RuntimeError(
                 "TensorRT build requested, but neither TensorRT Python bindings nor the trtexec binary are available."
             )
         if backend == "python" and not self._python_bindings_available():
             raise RuntimeError("TensorRT Python bindings are not installed in the active environment.")
-        if backend == "trtexec" and shutil.which("trtexec") is None:
+        if backend == "trtexec" and _resolve_trtexec_path() is None:
             raise RuntimeError("The trtexec binary is not available on PATH.")
         return backend
 
@@ -256,8 +271,11 @@ class TensorRTEngineBuilder:
     def _build_with_trtexec(self, request: TensorRTEngineBuildRequest) -> None:
         has_dynamic_inputs = onnx_has_dynamic_inputs(request.onnx_path)
         workspace_mb = max(1, int(request.workspace_gb * 1024))
+        trtexec_path = _resolve_trtexec_path()
+        if trtexec_path is None:
+            raise RuntimeError("The trtexec binary is not available on PATH.")
         command = [
-            shutil.which("trtexec") or "trtexec",
+            trtexec_path,
             f"--onnx={request.onnx_path}",
             f"--saveEngine={request.engine_path}",
             f"--memPoolSize=workspace:{workspace_mb}",
