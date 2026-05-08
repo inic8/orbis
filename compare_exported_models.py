@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
+import onnx
 from omegaconf import OmegaConf
 
 
@@ -67,6 +68,17 @@ def resolve_engine_path(run_dir: Path, engine_arg: str | None) -> Path:
     return latest_engine.resolve()
 
 
+def infer_condition_frames(onnx_path: Path, num_available_images: int) -> int:
+    model = onnx.load(str(onnx_path))
+    for graph_input in model.graph.input:
+        if graph_input.name != "context":
+            continue
+        dims = graph_input.type.tensor_type.shape.dim
+        if len(dims) > 1 and dims[1].HasField("dim_value"):
+            return int(dims[1].dim_value)
+    return max(1, num_available_images - 1)
+
+
 def build_validation_override(
     *,
     config_path: Path,
@@ -96,7 +108,7 @@ def build_validation_override(
             }
         }
     )
-    validation_config_path = output_dir / "compare_validation.yaml"
+    validation_config_path = output_dir / "compare_exported_models_validation.yaml"
     OmegaConf.save(validation_override, validation_config_path)
     return validation_config_path.resolve()
 
@@ -150,7 +162,7 @@ def build_rollout_environment() -> Dict[str, str]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Sequentially compare baseline, ONNX, and TensorRT rollout latency and memory against the same input frames."
+        description="Sequentially compare baseline, ONNX, and TensorRT exported-model rollout latency and memory against the same input frames."
     )
     parser.add_argument("--run-dir", type=str, required=True, help="Run directory containing config.yaml, checkpoints/, onnx/, and tensorrt/.")
     parser.add_argument("--checkpoint", type=str, default=None, help="Optional checkpoint path override, relative to run-dir if relative.")
@@ -158,7 +170,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--engine", type=str, default=None, help="Optional TensorRT engine path override, relative to run-dir if relative.")
     parser.add_argument("--config", type=str, default="config.yaml", help="Config path, relative to run-dir if relative.")
     parser.add_argument("--output-dir", type=str, default=None, help="Directory for sequential rollout outputs and the comparison summary.")
-    parser.add_argument("--num-gen-frames", type=int, default=1, help="Number of frames to generate in each rollout.")
+    parser.add_argument("--num-gen-frames", type=int, default=5, help="Number of frames to generate in each rollout.")
     parser.add_argument("--num-steps", type=int, default=30, help="Sampler steps for each rollout.")
     parser.add_argument("--eta", type=float, default=0.0, help="Sampling stochasticity for each rollout.")
     parser.add_argument("--seed", type=int, default=42, help="Common seed used across all three rollout runs.")
@@ -193,8 +205,13 @@ def main() -> None:
     checkpoint_path = resolve_checkpoint_path(run_dir, args.checkpoint)
     onnx_path = resolve_onnx_path(run_dir, args.onnx)
     engine_path = resolve_engine_path(run_dir, args.engine)
+    num_condition_frames = infer_condition_frames(onnx_path, len(image_paths))
+    if len(image_paths) < num_condition_frames:
+        raise ValueError(
+            f"Need at least {num_condition_frames} input image(s) for the exported model, but only {len(image_paths)} were provided."
+        )
 
-    output_dir = Path(args.output_dir).resolve() if args.output_dir else (run_dir / "compare_optimizations").resolve()
+    output_dir = Path(args.output_dir).resolve() if args.output_dir else (run_dir / "compare_exported_models").resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
     validation_config_path = build_validation_override(
@@ -220,6 +237,8 @@ def main() -> None:
         str(validation_config_path),
         "--num_gen_frames",
         str(args.num_gen_frames),
+        "--num_condition_frames",
+        str(num_condition_frames),
         "--num_steps",
         str(args.num_steps),
         "--eta",
@@ -280,6 +299,7 @@ def main() -> None:
             "engine_path": str(engine_path),
             "validation_config": str(validation_config_path),
             "image_paths": [str(path) for path in image_paths],
+            "num_condition_frames": int(num_condition_frames),
             "num_gen_frames": int(args.num_gen_frames),
             "num_steps": int(args.num_steps),
             "eta": float(args.eta),

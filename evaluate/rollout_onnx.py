@@ -86,11 +86,35 @@ def resolve_input_hw(input_size: object) -> Tuple[int, int]:
     return size, size
 
 
+def _ort_cuda_device_id(device: str) -> int:
+    if device == "cuda":
+        return 0
+    if device.startswith("cuda:"):
+        return int(device.split(":", 1)[1])
+    raise ValueError(f"Unsupported CUDA device string: {device}")
+
+
 def build_ort_session(args: argparse.Namespace) -> ort.InferenceSession:
     available_providers = ort.get_available_providers()
-    providers = ["CPUExecutionProvider"]
-    if args.device.startswith("cuda") and "CUDAExecutionProvider" in available_providers:
-        providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    wants_cuda = args.device.startswith("cuda")
+
+    if wants_cuda and hasattr(ort, "preload_dlls"):
+        try:
+            ort.preload_dlls()
+        except Exception as exc:
+            logger.warning(f"Failed to preload ONNX Runtime CUDA libraries: {exc}")
+
+    providers: list[object] = ["CPUExecutionProvider"]
+    if wants_cuda:
+        if "CUDAExecutionProvider" not in available_providers:
+            raise RuntimeError(
+                "CUDA device requested for ONNX Runtime, but CUDAExecutionProvider is unavailable. "
+                f"Available providers: {available_providers}"
+            )
+        providers = [
+            ("CUDAExecutionProvider", {"device_id": _ort_cuda_device_id(args.device)}),
+            "CPUExecutionProvider",
+        ]
 
     session_options = ort.SessionOptions()
     if not args.enable_ort_optimizations:
@@ -101,8 +125,15 @@ def build_ort_session(args: argparse.Namespace) -> ort.InferenceSession:
         sess_options=session_options,
         providers=providers,
     )
+    active_providers = session.get_providers()
+    logger.info(f"ONNX Runtime available providers: {available_providers}")
     logger.info(f"ONNX Runtime providers: {session.get_providers()}")
     logger.info(f"ORT graph optimizations enabled: {args.enable_ort_optimizations}")
+    if wants_cuda and "CUDAExecutionProvider" not in active_providers:
+        raise RuntimeError(
+            "CUDA device requested for ONNX Runtime, but the session did not start with CUDAExecutionProvider. "
+            f"Active providers: {active_providers}"
+        )
     return session
 
 
@@ -352,7 +383,14 @@ def generate_images(args: argparse.Namespace, unknown_args: List[str]) -> None:
     if args.evaluate_ema:
         logger.info("Using weights baked into the ONNX model; evaluate_ema does not switch weights at runtime.")
 
-    num_condition_frames = infer_onnx_context_frames(ort_session, model)
+    inferred_condition_frames = infer_onnx_context_frames(ort_session, model)
+    num_condition_frames = inferred_condition_frames
+    if args.num_condition_frames is not None:
+        if int(args.num_condition_frames) != inferred_condition_frames:
+            raise ValueError(
+                f"Requested {args.num_condition_frames} conditioning frames, but the ONNX model expects {inferred_condition_frames}."
+            )
+        num_condition_frames = int(args.num_condition_frames)
     logger.info(f"Using {num_condition_frames} conditioning frame(s) based on the exported ONNX model input shape.")
 
     if args.val_config is not None:
@@ -510,6 +548,7 @@ def parse_args(argv: Optional[List[str]] = None) -> Tuple[argparse.Namespace, Li
     parser.add_argument("--config", type=str, default="config.yaml", help="Config path, relative to exp_dir.")
     parser.add_argument("--val_config", type=str, default=None, help="Optional validation data config path (absolute or relative to exp_dir).")
     parser.add_argument("--num_gen_frames", type=int, default=1, help="Number of frames to generate (roll-out length).")
+    parser.add_argument("--num_condition_frames", type=int, default=None, help="Optional number of conditioning frames to validate against the ONNX model input shape.")
     parser.add_argument("--frames_dir", type=str, default=None, help="Output directory for frames/GIFs (relative to exp_dir if relative).")
     parser.add_argument("--save_real", type=str2bool, default=False, help="Also save ground-truth frames next to generated ones.")
     parser.add_argument("--num_videos", type=int, default=None, help="Generate at most this many sequences (None = all).")

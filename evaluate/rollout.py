@@ -119,10 +119,11 @@ def generate_images(args: argparse.Namespace, unknown_args: List[str]) -> None:
     else:
         data_cfg = cfg
 
-    num_condition_frames = None
+    num_condition_frames = int(args.num_condition_frames) if args.num_condition_frames is not None else None
     # If saving real frames too, request longer sequence from the datamodule
     if args.save_real:
-        num_condition_frames = data_cfg.data.params.validation.params.num_frames - 1
+        if num_condition_frames is None:
+            num_condition_frames = data_cfg.data.params.validation.params.num_frames - 1
         num_frames_total = num_condition_frames + args.num_gen_frames
         data_cfg.data.params.validation.params.num_frames = num_frames_total
 
@@ -163,6 +164,10 @@ def generate_images(args: argparse.Namespace, unknown_args: List[str]) -> None:
 
         if num_condition_frames is None:
             num_condition_frames = max(1, x.shape[1] - args.num_gen_frames)
+        if x.shape[1] < num_condition_frames:
+            raise ValueError(
+                f"Validation sample provides {x.shape[1]} frames, but the rollout needs {num_condition_frames} conditioning frames."
+            )
 
         # Conditioning: take first K frames as input
         cond_x = x[:, :num_condition_frames]
@@ -301,6 +306,12 @@ def parse_args(argv: Optional[List[str]] = None) -> Tuple[argparse.Namespace, Li
         type=int,
         default=1,
         help="Number of frames to generate (roll-out length).",
+    )
+    parser.add_argument(
+        "--num_condition_frames",
+        type=int,
+        default=None,
+        help="Optional number of conditioning frames to consume from each validation sample.",
     )
     parser.add_argument(
         "--frames_dir",

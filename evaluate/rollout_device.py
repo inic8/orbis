@@ -312,11 +312,12 @@ def generate_images(args: argparse.Namespace, unknown_args: List[str]) -> None:
     else:
         data_cfg = cfg
 
-    num_condition_frames = None
+    num_condition_frames = int(args.num_condition_frames) if args.num_condition_frames is not None else None
     if args.save_real:
         validation_params = data_cfg.data.params.validation.params
         if hasattr(validation_params, "num_frames"):
-            num_condition_frames = int(validation_params.num_frames) - 1
+            if num_condition_frames is None:
+                num_condition_frames = int(validation_params.num_frames) - 1
             validation_params.num_frames = num_condition_frames + args.num_gen_frames
 
     if hasattr(data_cfg.data.params, "train"):
@@ -444,6 +445,7 @@ def parse_args(argv: Optional[List[str]] = None) -> Tuple[argparse.Namespace, Li
     parser.add_argument("--config", type=str, default="config.yaml", help="Config path, relative to exp_dir.")
     parser.add_argument("--val_config", type=str, default=None, help="Optional validation data config path (absolute or relative to exp_dir).")
     parser.add_argument("--num_gen_frames", type=int, default=1, help="Number of frames to generate (roll-out length).")
+    parser.add_argument("--num_condition_frames", type=int, default=None, help="Optional number of conditioning frames to consume from each validation sample.")
     parser.add_argument("--frames_dir", type=str, default=None, help="Output directory for frames/GIFs (relative to exp_dir if relative).")
     parser.add_argument("--save_real", type=str2bool, default=False, help="Also save ground-truth frames next to generated ones.")
     parser.add_argument("--num_videos", type=int, default=None, help="Generate at most this many sequences (None = all).")
